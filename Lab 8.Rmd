@@ -1,0 +1,243 @@
+---
+title: "Lab8"
+author: "Nasrin Khanam"
+date: "2025-11-06"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(haven)
+library(forcats)
+library(scales)
+
+setwd("/Users/Nasrinkhanam/Downloads")
+load("ACS_2021_couples.RData")
+
+# Recode race/hispanic (as before)
+acs2021_couples$RACE <- fct_recode(as.factor(acs2021_couples$RACE),
+                                   "White" = "1",
+                                   "Black" = "2",
+                                   "American Indian or Alaska Native" = "3",
+                                   "Chinese" = "4",
+                                   "Japanese" = "5",
+                                   "Other Asian or Pacific Islander" = "6",
+                                   "Other race" = "7",
+                                   "two races" = "8",
+                                   "three races" = "9")
+
+acs2021_couples$h_race <- fct_recode(as.factor(acs2021_couples$h_race),
+                                     "White" = "1",
+                                     "Black" = "2",
+                                     "American Indian or Alaska Native" = "3",
+                                     "Chinese" = "4",
+                                     "Japanese" = "5",
+                                     "Other Asian or Pacific Islander" = "6",
+                                     "Other race" = "7",
+                                     "two races" = "8",
+                                     "three races" = "9")
+
+acs2021_couples$HISPAN <- fct_recode(as.factor(acs2021_couples$HISPAN),
+                                     "Not Hispanic" = "0",
+                                     "Mexican" = "1",
+                                     "Puerto Rican" = "2",
+                                     "Cuban" = "3",
+                                     "Other" = "4")
+
+acs2021_couples$h_hispan <- fct_recode(as.factor(acs2021_couples$h_hispan),
+                                       "Not Hispanic" = "0",
+                                       "Mexican" = "1",
+                                       "Puerto Rican" = "2",
+                                       "Cuban" = "3",
+                                       "Other" = "4")
+
+trad_data <- acs2021_couples %>%
+  filter(SEX == "Female",
+         h_sex == "Male")
+
+
+trad_data$he_more_than_7yrs_than_her <- as.numeric(trad_data$age_diff <= -7)
+
+
+table(trad_data$he_more_than_7yrs_than_her)
+
+
+
+head(trad_data$STATEFIP)
+str(trad_data$STATEFIP)
+
+ols_state <- lm(
+  he_more_than_7yrs_than_her ~ STATEFIP,
+  data = trad_data %>% filter(STATEFIP %in% c("California","Illinois","New York"))
+)
+
+summary(ols_state)
+
+three_states_data <- trad_data %>%
+  filter(STATEFIP %in% c("California", "Illinois", "New York")) %>%
+  mutate(
+    state_name = STATEFIP   # already readable names
+  )
+
+three_states_age_gap <- three_states_data %>%
+  group_by(state_name) %>%
+  summarise(
+    prop_7plus_gap = mean(he_more_than_7yrs_than_her, na.rm = TRUE),
+    n = n()
+  )
+
+three_states_age_gap
+
+ggplot(three_states_age_gap,
+       aes(x = state_name, y = prop_7plus_gap, fill = state_name)) +
+  geom_col() +
+  geom_text(aes(label = paste0(round(prop_7plus_gap * 100, 2), "%")),
+            vjust = -0.5, size = 3) +
+  labs(title = "Proportion of Couples Where Man is 7+ Years Older",
+       subtitle = "New York, Illinois, and California",
+       x = "State",
+       y = "Proportion") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+
+table(trad_data$REGION)
+str(trad_data$REGION)
+head(trad_data$REGION)
+
+ols_region <- lm(
+  he_more_than_7yrs_than_her ~ REGION,
+  data = trad_data
+)
+
+summary(ols_region)
+
+region_age_gap <- trad_data %>%
+  group_by(REGION) %>%
+  summarise(
+    prop_7plus_gap = mean(he_more_than_7yrs_than_her, na.rm = TRUE),
+    n = n()
+  )
+
+region_age_gap <- region_age_gap %>%
+  mutate(REGION = forcats::fct_reorder(REGION, prop_7plus_gap))
+
+ggplot(region_age_gap,
+       aes(x = prop_7plus_gap, y = REGION, fill = REGION)) +
+  geom_col() +
+  geom_text(aes(label = paste0(round(prop_7plus_gap * 100, 2), "%")),
+            hjust = -0.1, size = 3) +
+  labs(title = "Proportion of Couples Where the Man Is 7+ Years Older",
+       subtitle = "By U.S. Census Division",
+       x = "Proportion",
+       y = "Region (Division)") +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  coord_cartesian(xlim = c(0, max(region_age_gap$prop_7plus_gap) * 1.15))
+
+##Lab 8
+#
+
+ols_educ <- lm(
+  he_more_than_7yrs_than_her ~ educ_hs + educ_somecoll +
+    educ_college + educ_advdeg + AGE,
+  data = trad_data
+)
+
+summary(ols_educ)
+
+# Predicted values and simple classification using cutoff = mean(predictions)
+pred_vals_ols <- predict(ols_educ, trad_data)
+cutoff_ols <- mean(pred_vals_ols)
+
+pred_model_ols <- (pred_vals_ols > cutoff_ols)
+
+tab_ols <- table(pred = pred_model_ols,
+                 true = trad_data$he_more_than_7yrs_than_her)
+tab_ols
+
+
+model_logit <- glm(
+  he_more_than_7yrs_than_her ~ educ_hs + educ_somecoll +
+    educ_college + educ_advdeg + AGE,
+  data = trad_data,
+  family = binomial(link = "logit")
+)
+
+summary(model_logit)
+
+pred_vals_logit <- predict(model_logit, trad_data, type = "response")
+cutoff_logit <- mean(pred_vals_logit)   # like the example from the professor
+
+pred_model_logit <- (pred_vals_logit > cutoff_logit)
+
+tab_logit <- table(pred = pred_model_logit,
+                   true = trad_data$he_more_than_7yrs_than_her)
+tab_logit
+
+
+model_probit <- glm(
+  he_more_than_7yrs_than_her ~ educ_hs + educ_somecoll +
+    educ_college + educ_advdeg + AGE,
+  data = trad_data,
+  family = binomial(link = "probit")
+)
+
+summary(model_probit)
+
+pred_vals_probit <- predict(model_probit, trad_data, type = "response")
+cutoff_probit <- mean(pred_vals_probit)
+
+pred_model_probit <- (pred_vals_probit > cutoff_probit)
+
+tab_probit <- table(pred = pred_model_probit,
+                    true = trad_data$he_more_than_7yrs_than_her)
+tab_probit
+
+
+
+calc_metrics <- function(tab) {
+  tn <- tab["FALSE", "0"]
+  fp <- tab["TRUE",  "0"]
+  fn <- tab["FALSE", "1"]
+  tp <- tab["TRUE",  "1"]
+  
+  accuracy <- (tp + tn) / (tp + tn + fp + fn)
+  false_pos_rate <- fp / (fp + tn)
+  false_neg_rate <- fn / (fn + tp)
+  
+  tibble(
+    accuracy = accuracy,
+    false_pos_rate = false_pos_rate,
+    false_neg_rate = false_neg_rate
+  )
+}
+
+metrics_ols    <- calc_metrics(tab_ols)    %>% mutate(model = "OLS")
+metrics_logit  <- calc_metrics(tab_logit)  %>% mutate(model = "Logit")
+metrics_probit <- calc_metrics(tab_probit) %>% mutate(model = "Probit")
+
+bind_rows(metrics_ols, metrics_logit, metrics_probit) %>%
+  select(model, accuracy, false_pos_rate, false_neg_rate)
+
+trad_data$BA_plus <- trad_data$educ_college + trad_data$educ_advdeg
+
+model_lpm_v1 <- lm(he_more_than_5yrs_than_her ~ BA_plus + AGE + + I(AGE*BA_plus), data = trad_data)
+summary(model_lpm_v1)
+
+dat_use_BAplus <- trad_data %>% filter(as.logical(BA_plus)) 
+dat_use_ltBA <- trad_data %>% filter(!as.logical(BA_plus)) 
+
+# now split into 2 parts
+model_lpm_v1_BAplus <- lm(he_more_than_5yrs_than_her ~ AGE, data = dat_use_BAplus)
+summary(model_lpm_v1_BAplus)
+model_lpm_v1_ltBA <- lm(he_more_than_5yrs_than_her ~ AGE, data = dat_use_ltBA)
+summary(model_lpm_v1_ltBA)
+```
+
